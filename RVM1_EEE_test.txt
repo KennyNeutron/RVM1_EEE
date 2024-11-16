@@ -1,0 +1,94 @@
+% Inputs: Rectangle dimensions and corners
+cornerA = [0, 0];   % Upper left corner of rectangle
+cornerB = [140, 0]; % Upper right corner of rectangle
+
+% Writing area and E specs
+z_height = 210;     % Writing surface height (mm)
+pen_offset = 117;   % Pen length (mm)
+num_E = 3;          % Number of "E"s
+gap = 10;           % Gap between "E"s
+E_width = 40;       % Width of "E"
+E_height = 50;      % Height of "E"
+stroke_thickness = 2; % Approximation of the line thickness
+
+% Generate trajectory for each "E"
+x_start = cornerA(1);
+y_start = cornerA(2);
+
+E_trajectories = []; % To store all "E" waypoints
+
+for i = 1:num_E
+    % X offset for the current "E"
+    x_offset = x_start + (E_width + gap) * (i - 1);
+    
+    % Waypoints for the "E"
+    E_points = [
+        x_offset, y_start;                      % Bottom left
+        x_offset + E_width, y_start;           % Bottom right
+        x_offset, y_start + E_height / 2;      % Middle left
+        x_offset + E_width / 2, y_start + E_height / 2; % Middle right
+        x_offset, y_start + E_height;          % Top left
+        x_offset + E_width, y_start + E_height % Top right
+    ];
+    % Add to the trajectories
+    E_trajectories = [E_trajectories; E_points; NaN NaN]; % Add NaN as separator
+end
+
+% Visualize the trajectory
+figure;
+hold on;
+plot(E_trajectories(:, 1), E_trajectories(:, 2), 'b-o', 'LineWidth', 1.5);
+xlabel('X (mm)');
+ylabel('Y (mm)');
+title('Writing "EEE" Trajectory');
+grid on;
+axis equal;
+hold off;
+
+% Placeholder: Inverse Kinematics (function to calculate joint angles)
+function dq = inverse_kinematics(x, y, z)
+    % Assume a simplified planar 2-DOF arm for this example
+    L1 = 250; % Upper arm length (mm)
+    L2 = 160; % Forearm length (mm)
+    
+    % Calculate the position of the wrist
+    wx = x;
+    wy = y;
+    
+    % Law of cosines to find joint angles
+    D = (wx^2 + wy^2 - L1^2 - L2^2) / (2 * L1 * L2);
+    theta2 = atan2(sqrt(1 - D^2), D); % Elbow angle
+    
+    theta1 = atan2(wy, wx) - atan2(L2 * sin(theta2), L1 + L2 * cos(theta2)); % Shoulder angle
+    
+    % Placeholder values for the other joints (wrist, pitch, roll)
+    dq = [theta1, theta2, 0, 0, 0]; % Joint angles
+end
+
+% Generate commands and write to file
+fid = fopen('motion_commands.txt', 'w');
+fprintf(fid, 'OG\n'); % Align with Y-axis
+
+% Starting position
+fprintf(fid, 'TI 50\n'); % Pause for 5 seconds
+fprintf(fid, 'GC\n');    % Close the gripper
+fprintf(fid, 'TI 10\n'); % Pause for 1 second
+
+% Iterate through the trajectory
+for i = 1:size(E_trajectories, 1)
+    if isnan(E_trajectories(i, 1)) % Separator (NaN row)
+        continue;
+    end
+    x = E_trajectories(i, 1);
+    y = E_trajectories(i, 2);
+    
+    % Inverse kinematics to calculate joint angles
+    joint_angles = inverse_kinematics(x, y, z_height - pen_offset);
+    
+    % Format joint angle command
+    fprintf(fid, 'MJ %.1f,%.1f,%.1f,%.1f,%.1f\n', joint_angles);
+end
+
+fclose(fid);
+
+disp('Motion commands saved to motion_commands.txt');
